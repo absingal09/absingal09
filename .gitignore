@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+body.txt
+comment.md
+
+# Local build prompt — not part of the profile repo
+pixel-canvas-prompt.md
+
+# local preview scratch
+_*.png
+_*.svg
+_*.html
+mona*.jpg
+mona*.png

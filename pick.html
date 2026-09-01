@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel picker</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #0d1117; color: #c9d1d9; }
+  header { padding: 12px 16px; border-bottom: 1px solid #21262d; }
+  header h1 { margin: 0 0 2px; font-size: 16px; }
+  header p { margin: 0; color: #8b949e; }
+  main { padding: 16px; display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start;
+         height: calc(100vh - 76px); box-sizing: border-box; }
+  #stage { flex: 1 1 auto; min-width: 0; align-self: stretch; border: 1px solid #21262d;
+           overflow: auto; background: #161b22; }
+  canvas { display: block; image-rendering: pixelated; cursor: crosshair; }
+  .panel { width: 280px; flex: 0 0 280px; }
+  @media (max-width: 720px) {
+    main { height: auto; }
+    .panel { width: 100%; flex-basis: 100%; }
+  }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  button { font: inherit; padding: 6px 10px; border: 1px solid #30363d; border-radius: 6px;
+           background: #21262d; color: inherit; cursor: pointer; }
+  button:hover { background: #30363d; }
+  button.primary { background: #238636; border-color: #238636; color: #fff; font-weight: 600; }
+  button.primary[disabled] { opacity: .5; cursor: not-allowed; }
+  .readout { font-variant-numeric: tabular-nums; }
+  .swatches { display: grid; grid-template-columns: repeat(8, 28px); gap: 6px; }
+  .sw { width: 28px; height: 28px; border: 2px solid #484f58; border-radius: 5px;
+        cursor: pointer; box-sizing: border-box; }
+  .sw:hover { border-color: #8b949e; }
+  .sw.sel { border-color: #58a6ff; box-shadow: 0 0 0 2px #58a6ff55; }
+  code { background: #161b22; padding: 1px 5px; border-radius: 4px; }
+  a { color: #58a6ff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎨 Pixel picker</h1>
+  <p>Use <b>Zoom&nbsp;+/&minus;</b>, drag to pan. Click the pixel you want, choose a colour, then <b>Paint this pixel</b>.</p>
+</header>
+<main>
+  <div id="stage"><canvas id="c"></canvas></div>
+  <div class="panel">
+    <div class="row">
+      <button id="zin">Zoom +</button><button id="zout">Zoom &minus;</button><button id="zfit">Fit</button>
+    </div>
+    <div class="row readout" id="hover">Hover the canvas…</div>
+    <div class="row readout" id="sel"><b>No pixel selected</b></div>
+    <div class="row"><div class="swatches" id="pal"></div></div>
+    <div class="row readout" id="chosen">Painting: <b id="cname">red</b></div>
+    <div class="row"><button id="paint" class="primary" disabled>Paint this pixel</button></div>
+    <p id="note" style="color:#8b949e">
+      You'll need to be signed in to GitHub. The button opens a pre-filled issue &mdash;
+      just submit it, don't edit it. One pixel per person every 5&nbsp;minutes.
+      The bot paints it in ~15&ndash;30&nbsp;s, but the profile image can take
+      <b>1&ndash;3&nbsp;minutes</b> to refresh (GitHub caching).
+    </p>
+    <p style="color:#8b949e">Canvas: <span id="dim">…</span> &middot;
+      <a id="repo" href="#">repository</a></p>
+  </div>
+</main>
+<script>
+const OWNER = "absingal09", REPO = "absingal09";
+const EMPTY = "#161b22";
+const PALETTE = {
+  white:"#ffffff", silver:"#c9d1d9", gray:"#6e7681", slate:"#48535d", black:"#1b1f24",
+  red:"#f85149", orange:"#ff8c42", yellow:"#f2cc60", lime:"#7ee787", green:"#2ea043",
+  teal:"#39c5cf", sky:"#58a6ff", blue:"#388bfd", indigo:"#6e5ef8", purple:"#bc8cff",
+  magenta:"#f778ba", cream:"#efe3c6", tan:"#d8b98c", skin:"#e7b58a", rose:"#cd8f6d",
+  ochre:"#c69749", gold:"#9a7b33", sienna:"#a15c3a", brown:"#a4694f", umber:"#6b4a2f",
+  bister:"#45301c", espresso:"#2a1e13", olive:"#6d6a3a", moss:"#46512f", fern:"#33442d",
+  pine:"#24352a", mist:"#b7c2c4",
+};
+
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const stage = document.getElementById("stage");
+let W = 0, H = 0, pixels = {}, zoom = 6, selected = null, colour = "red";
+
+document.getElementById("repo").href = `https://github.com/${OWNER}/${REPO}`;
+
+let lastBy = {};   // "x,y" -> username who last painted it (from the placements log)
+
+fetch(`./canvas.json?t=${Date.now()}`).then(r => r.json()).then(data => {
+  W = data.width; H = data.height; pixels = data.pixels || {};
+  (data.placements || []).forEach(p => { lastBy[p.x + "," + p.y] = p.user; });
+  document.getElementById("dim").textContent = `${W} × ${H}`;
+  fit();
+}).catch(() => {
+  document.getElementById("hover").textContent = "Couldn't load canvas.json (is GitHub Pages serving it next to this file?).";
+});
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function fit() {
+  const availW = stage.clientWidth - 4, availH = stage.clientHeight - 4;
+  zoom = clamp(Math.floor(Math.min(availW / W, availH / H)), 2, 40);
+  draw();
+}
+function draw() {
+  cv.width = W * zoom; cv.height = H * zoom;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const name = pixels[x + "," + y];
+    ctx.fillStyle = name ? (PALETTE[name] || EMPTY) : EMPTY;
+    ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
+  }
+  if (zoom >= 6) {
+    ctx.strokeStyle = "rgba(255,255,255,.08)"; ctx.lineWidth = 1;
+    for (let x = 0; x <= W; x++) { ctx.beginPath(); ctx.moveTo(x*zoom,0); ctx.lineTo(x*zoom,H*zoom); ctx.stroke(); }
+    for (let y = 0; y <= H; y++) { ctx.beginPath(); ctx.moveTo(0,y*zoom); ctx.lineTo(W*zoom,y*zoom); ctx.stroke(); }
+  }
+  if (selected) {
+    ctx.strokeStyle = "#58a6ff"; ctx.lineWidth = 2;
+    ctx.strokeRect(selected.x * zoom + 1, selected.y * zoom + 1, zoom - 2, zoom - 2);
+  }
+}
+function cellAt(ev) {
+  const r = cv.getBoundingClientRect();
+  const x = Math.floor((ev.clientX - r.left) / zoom);
+  const y = Math.floor((ev.clientY - r.top) / zoom);
+  return (x >= 0 && x < W && y >= 0 && y < H) ? { x, y } : null;
+}
+function describe(c) {
+  if (!c) return "";
+  const key = c.x + "," + c.y, name = pixels[key];
+  let s = `X: ${c.x}  Y: ${c.y} — `;
+  if (!name) return s + "empty";
+  return s + name + (lastBy[key] ? ` by @${lastBy[key]}` : "");
+}
+
+cv.addEventListener("mousemove", e => {
+  document.getElementById("hover").textContent = describe(cellAt(e)) || "Hover the canvas…";
+});
+cv.addEventListener("click", e => {
+  const c = cellAt(e); if (!c) return;
+  selected = c;
+  const name = pixels[c.x + "," + c.y];
+  if (!userPicked && name && PALETTE[name]) selectColour(name);  // only until you choose one
+  document.getElementById("sel").innerHTML = "<b>" + describe(c) + "</b>";
+  document.getElementById("paint").disabled = false;
+  updateButton();
+  draw();
+});
+function updateButton() {
+  document.getElementById("paint").textContent =
+    selected ? `Paint (${selected.x}, ${selected.y}) as ${colour}` : "Paint this pixel";
+}
+
+let userPicked = false;
+const pal = document.getElementById("pal");
+Object.entries(PALETTE).forEach(([name, hex]) => {
+  const d = document.createElement("div");
+  d.className = "sw"; d.style.background = hex; d.title = name; d.dataset.name = name;
+  d.addEventListener("click", () => { userPicked = true; selectColour(name); });
+  pal.appendChild(d);
+});
+function selectColour(name) {
+  colour = name;
+  document.getElementById("cname").textContent = name;
+  [...pal.children].forEach(s => s.classList.toggle("sel", s.dataset.name === name));
+  updateButton();
+}
+selectColour("red");
+
+function setZoom(next, anchor) {
+  next = clamp(Math.round(next), 2, 40);
+  if (next === zoom) return;
+  // keep the pixel under `anchor` (client coords) roughly fixed while zooming
+  const before = anchor && { x: (stage.scrollLeft + anchor.x) / zoom, y: (stage.scrollTop + anchor.y) / zoom };
+  zoom = next; draw();
+  if (before) {
+    stage.scrollLeft = before.x * zoom - anchor.x;
+    stage.scrollTop = before.y * zoom - anchor.y;
+  }
+}
+const centreAnchor = () => ({ x: stage.clientWidth / 2, y: stage.clientHeight / 2 });
+document.getElementById("zin").onclick = () => setZoom(zoom + 3, centreAnchor());
+document.getElementById("zout").onclick = () => setZoom(zoom - 3, centreAnchor());
+document.getElementById("zfit").onclick = fit;
+window.addEventListener("resize", fit);
+
+document.getElementById("paint").onclick = () => {
+  if (!selected) return;
+  const title = `Paint pixel ${selected.x},${selected.y}`;
+  const body = `X: ${selected.x}\nY: ${selected.y}\nColour: ${colour}`;
+  const url = `https://github.com/${OWNER}/${REPO}/issues/new?labels=pixel`
+    + `&title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+  window.open(url, "_blank", "noopener");
+};
+</script>
+</body>
+</html>

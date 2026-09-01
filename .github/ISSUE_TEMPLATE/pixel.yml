@@ -1,0 +1,76 @@
+name: 🎨 Paint a pixel
+description: Place one pixel on the collaborative 150×150 canvas
+title: Paint a pixel
+labels: [pixel]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Place a single pixel on the shared **150×150** canvas. It starts as a
+        pixel-art Ferrari F40 and visitors reshape it together.
+
+        The easy way is the **[pixel picker](https://absingal09.github.io/absingal09/pick.html)** —
+        click the pixel, pick a colour, submit. This form is the manual fallback.
+
+        - **One pixel per GitHub user every 5 minutes.**
+        - `0,0` is the top-left cell; `149,149` is the bottom-right.
+        - Overpainting is allowed — the bot tells you what colour was there before.
+        - After you submit, the bot paints it and closes this issue in ~15–30 s, but
+          the image on the **profile page can take 1–3 minutes** to refresh (GitHub
+          image caching). Hard-refresh if it looks stale.
+  - type: input
+    id: x
+    attributes:
+      label: X (column)
+      description: A whole number from 0 (left edge) to 149 (right edge).
+      placeholder: "0-149"
+    validations:
+      required: true
+  - type: input
+    id: y
+    attributes:
+      label: Y (row)
+      description: A whole number from 0 (top edge) to 149 (bottom edge).
+      placeholder: "0-149"
+    validations:
+      required: true
+  - type: dropdown
+    id: colour
+    attributes:
+      label: Colour
+      description: 32 named colours, chosen to read on both GitHub themes.
+      options:
+        - white
+        - silver
+        - gray
+        - slate
+        - black
+        - red
+        - orange
+        - yellow
+        - lime
+        - green
+        - teal
+        - sky
+        - blue
+        - indigo
+        - purple
+        - magenta
+        - cream
+        - tan
+        - skin
+        - rose
+        - ochre
+        - gold
+        - sienna
+        - brown
+        - umber
+        - bister
+        - espresso
+        - olive
+        - moss
+        - fern
+        - pine
+        - mist
+    validations:
+      required: true
